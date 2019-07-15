@@ -1,4 +1,5 @@
 require 'active_record'
+require 'pry'
 
 ActiveRecord::Base.establish_connection adapter: 'sqlite3', database: ':memory:'
 
@@ -41,6 +42,7 @@ Task.create(
   ]
 )
 
+binding.pry
 def search(users, params)
   result = users
   result = result.with_critical_tasks if params[:critical]

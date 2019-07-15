@@ -3,8 +3,12 @@ require 'rom-repository'
 require 'rom-sql'
 require 'pry'
 
-config = ROM::Configuration.new(:sql, 'sqlite::memory')
+config = ROM::Configuration.new(:sql, 'postgres://localhost/rom_experiments')
+config.plugin(:sql, relations: :pg_explain)
 conn = config.gateways[:default].connection
+
+conn.drop_table?(:users)
+conn.drop_table?(:tasks)
 
 conn.create_table(:users) do
   primary_key :id
@@ -22,16 +26,27 @@ end
 config.relation(:users) do
   schema(:users, infer: true) do
     associations do
-      has_many :tasks
+      # has_many :tasks
     end
   end
 
-  def with_active_tasks
-    join(:tasks).where(status: 'active')
-  end
+  if ENV['JOIN']
+    def with_active_tasks
+      join(tasks).where(status: 'active')
+    end
 
-  def with_critical_tasks
-    join(:tasks).where(severity: 'critical')
+    def with_critical_tasks
+      join(tasks).where(severity: 'critical')
+    end
+  else
+    def with_active_tasks
+      # if association exists, second parameter is not needed
+      exists(tasks.active, tasks[:user_id] => users[:id])
+    end
+
+    def with_critical_tasks
+      exists(tasks.critical, tasks[:user_id] => users[:id])
+    end
   end
 end
 
@@ -40,6 +55,14 @@ config.relation(:tasks) do
     associations do
       belongs_to :user
     end
+  end
+
+  def active
+    where(status: 'active')
+  end
+
+  def critical
+    where(severity: 'critical')
   end
 end
 
@@ -63,6 +86,7 @@ def search(users, params)
   result = result.with_critical_tasks if params[:critical]
   result = result.with_active_tasks if params[:active]
   puts result.distinct.dataset.sql
+  # puts result.distinct.explain
   result.distinct.to_a
 end
 
@@ -80,6 +104,21 @@ pp search(users, critical: true, active: true)
 __END__
 
 $ ruby join.rb
+With critical tasks:
+SELECT DISTINCT "users"."id", "users"."name" FROM "users" WHERE (EXISTS (SELECT "tasks"."id", "tasks"."user_id", "tasks"."title", "tasks"."status", "tasks"."severity" FROM "tasks" WHERE (("severity" = 'critical') AND ("users"."id" = "tasks"."user_id")) ORDER BY "tasks"."id")) ORDER BY "users"."id"
+[{:id=>1, :name=>"Alex"}]
+
+With active tasks:
+SELECT DISTINCT "users"."id", "users"."name" FROM "users" WHERE (EXISTS (SELECT "tasks"."id", "tasks"."user_id", "tasks"."title", "tasks"."status", "tasks"."severity" FROM "tasks" WHERE (("status" = 'active') AND ("users"."id" = "tasks"."user_id")) ORDER BY "tasks"."id")) ORDER BY "users"."id"
+[{:id=>1, :name=>"Alex"}, {:id=>2, :name=>"John"}]
+
+With active critical tasks:
+SELECT DISTINCT "users"."id", "users"."name" FROM "users" WHERE ((EXISTS (SELECT "tasks"."id", "tasks"."user_id", "tasks"."title", "tasks"."status", "tasks"."severity" FROM "tasks" WHERE (("severity" = 'critical') AND ("users"."id" = "tasks"."user_id")) ORDER BY "tasks"."id")) AND (EXISTS (SELECT "tasks"."id", "tasks"."user_id", "tasks"."title", "tasks"."status", "tasks"."severity" FROM "tasks" WHERE (("status" = 'active') AND ("users"."id" = "tasks"."user_id")) ORDER BY "tasks"."id"))) ORDER BY "users"."id"
+[{:id=>1, :name=>"Alex"}]
+
+==========================
+
+$ JOIN=true ruby join.rb
 With critical tasks:
 SELECT DISTINCT `users`.`id`, `users`.`name` FROM `users` INNER JOIN `tasks` ON (`users`.`id` = `tasks`.`user_id`) WHERE (`severity` = 'critical') ORDER BY `users`.`id`
 [{:id=>1, :name=>"Alex"}]
