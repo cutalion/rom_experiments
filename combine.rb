@@ -63,6 +63,10 @@ config.relation(:posts) do
       has_many :comments
     end
   end
+
+  def for_users(users)
+    where(user_id: users.to_a.map { _1[:id] })
+  end
 end
 
 config.relation(:comments) do
@@ -90,5 +94,6 @@ users.changeset(:create, [{ name: 'Alex', company_id: 1}, { name: 'Bob', company
 posts.changeset(:create, { body: 'Post', user_id: 1 }).commit
 comments.changeset(:create, { body: 'Comment', user_id: 2 }).commit
 
+binding.pry
 # how did it get the post_author if comment does not have a post_id?
 puts comments.combine(:post_author, :post_author_company).to_a.inspect
