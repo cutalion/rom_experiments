@@ -47,22 +47,30 @@ class Relation < ROM::Relation[:sql]
 end
 
 class Users < Relation
-  option :meta, reader: true, default: -> { { model: User } }
-
   schema(:users, infer: true) do
     associations do
       has_many :addresses
     end
   end
+
+  def self.new(dataset = nil, **opts)
+    opts[:meta] ||= {}
+    opts[:meta][:model] ||= User
+    super
+  end
 end
 
 class Addresses < Relation
-  option :meta, reader: true, default: -> { { model: Address } }
-
   schema(:addresses, infer: true) do
     associations do
       belongs_to :user
     end
+  end
+
+  def self.new(dataset = nil, **opts)
+    opts[:meta] ||= {}
+    opts[:meta][:model] ||= Address
+    super
   end
 end
 
